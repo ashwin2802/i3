@@ -1,21 +1,20 @@
 
  ┌──────────────────────────────┐
- │ Release notes for i3 v4.18.2 │
+ │ Release notes for i3 v4.20.1 │
  └──────────────────────────────┘
 
-This is i3 v4.18.2. This version is considered stable. All users of i3 are
+This is i3 v4.20.1. This version is considered stable. All users of i3 are
 strongly encouraged to upgrade.
-
-This is a bugfix release for v4.18.
 
  ┌────────────────────────────┐
  │ Bugfixes                   │
  └────────────────────────────┘
 
-  • floating_maybe_reassign_ws: only re-focus if previously focused
-    (fixes a focus issue with KDE notifications)
-  • get_output_by_name: guard output->primary with require_active
-  • i3bar: fix Xorg memory leak
+  • i3bar: fix crash with multiple monitors
+  • xmlto: fix broken .TH line by extending title length
+  • i3-msg: fix --raw short form (-r) in manpage
+  • libi3: add missing sys/stat.h header
+  • use getcwd(NULL, 0) instead of GNU extension get_current_dir_name()
 
  ┌────────────────────────────┐
  │ Thanks!                    │
@@ -23,6 +22,6 @@ This is a bugfix release for v4.18.
 
 Thanks for testing, bugfixes, discussions and everything I forgot go out to:
 
-  Orestis Floros
+  rvalieris, Jakob Haufe, lycurgus, Baptiste Daroussin
 
--- Michael Stapelberg, 2020-07-26
+-- Michael Stapelberg, 2021-11-03

@@ -39,6 +39,7 @@ extern bool debug_build;
 /** The number of file descriptors passed via socket activation. */
 extern int listen_fds;
 extern int conn_screen;
+extern xcb_atom_t wm_sn;
 /**
  * The EWMH support window that is used to indicate that an EWMH-compliant
  * window manager is present. This window is created when i3 starts and
@@ -57,7 +58,7 @@ extern xcb_key_symbols_t *keysyms;
 extern char **start_argv;
 extern Display *xlibdpy, *xkbdpy;
 extern int xkb_current_group;
-extern TAILQ_HEAD(bindings_head, Binding) * bindings;
+extern TAILQ_HEAD(bindings_head, Binding) *bindings;
 extern const char *current_binding_mode;
 extern TAILQ_HEAD(autostarts_head, Autostart) autostarts;
 extern TAILQ_HEAD(autostarts_always_head, Autostart) autostarts_always;

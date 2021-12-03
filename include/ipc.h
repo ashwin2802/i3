@@ -40,8 +40,7 @@ typedef struct ipc_client {
     uint8_t *buffer;
     size_t buffer_size;
 
-    TAILQ_ENTRY(ipc_client)
-    clients;
+    TAILQ_ENTRY(ipc_client) clients;
 } ipc_client;
 
 /*
@@ -80,13 +79,6 @@ void ipc_new_client(EV_P_ struct ev_io *w, int revents);
  *
  */
 ipc_client *ipc_new_client_on_fd(EV_P_ int fd);
-
-/**
- * Creates the UNIX domain socket at the given path, sets it to non-blocking
- * mode, bind()s and listen()s on it.
- *
- */
-int ipc_create_socket(const char *filename);
 
 /**
  * Sends the specified event to all IPC clients which are currently connected

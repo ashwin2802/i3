@@ -20,6 +20,7 @@ state INITIAL:
   'set '                                   -> IGNORE_LINE
   'set	'                                  -> IGNORE_LINE
   'set_from_resource'                      -> IGNORE_LINE
+  'include'                                -> INCLUDE
   bindtype = 'bindsym', 'bindcode', 'bind' -> BINDING
   'bar'                                    -> BARBRACE
   'font'                                   -> FONT
@@ -59,7 +60,7 @@ state INITIAL:
   exectype = 'exec_always', 'exec'         -> EXEC
   colorclass = 'client.background'
       -> COLOR_SINGLE
-  colorclass = 'client.focused_inactive', 'client.focused', 'client.unfocused', 'client.urgent', 'client.placeholder'
+  colorclass = 'client.focused_inactive', 'client.focused_tab_title', 'client.focused', 'client.unfocused', 'client.urgent', 'client.placeholder'
       -> COLOR_BORDER
 
 # We ignore comments and 'set' lines (variables).
@@ -95,6 +96,11 @@ state SMART_GAPS:
 state BORDER_RADIUS:
   radius = number
       -> call cfg_border_radius(&radius)
+      
+# include <pattern>
+state INCLUDE:
+  pattern = string
+      -> call cfg_include($pattern)
 
 # floating_minimum_size <width> x <height>
 state FLOATING_MINIMUM_SIZE_WIDTH:
@@ -224,9 +230,10 @@ state CRITERIA:
   ctype = 'title'         -> CRITERION
   ctype = 'urgent'        -> CRITERION
   ctype = 'workspace'     -> CRITERION
+  ctype = 'machine'     -> CRITERION
   ctype = 'floating_from' -> CRITERION_FROM
   ctype = 'tiling_from'   -> CRITERION_FROM
-  ctype = 'tiling', 'floating'
+  ctype = 'tiling', 'floating', 'all'
       -> call cfg_criteria_add($ctype, NULL); CRITERIA
   ']'
       -> call cfg_criteria_pop_state()
@@ -428,6 +435,8 @@ state BINDCOMMAND:
   exclude_titlebar = '--exclude-titlebar'
       ->
   command = string
+      -> call cfg_binding($bindtype, $modifiers, $key, $release, $border, $whole_window, $exclude_titlebar, $command)
+  end
       -> call cfg_binding($bindtype, $modifiers, $key, $release, $border, $whole_window, $exclude_titlebar, $command)
 
 ################################################################################
