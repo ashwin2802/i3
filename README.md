@@ -1,4 +1,4 @@
-[![Travis](https://img.shields.io/travis/Airblader/i3.svg)](https://travis-ci.org/Airblader/i3)
+[![Build Status](https://github.com/Airblader/i3/actions/workflows/main.yml/badge.svg)](https://github.com/Airblader/i3/actions/workflows/main.yml)
 [![Issues](https://img.shields.io/github/issues/Airblader/i3.svg)](https://github.com/Airblader/i3/issues)
 [![Forks](https://img.shields.io/github/forks/Airblader/i3.svg)](https://github.com/Airblader/i3/network)
 [![Stars](https://img.shields.io/github/stars/Airblader/i3.svg)](https://github.com/Airblader/i3/stargazers)
@@ -35,7 +35,7 @@ If your issue is with i3-gaps, report it [here](https://github.com/Airblader/i3)
 
 If your issue is with core i3 functionality, please report it [upstream](https://www.github.com/i3/i3).
 
-For support & all other kinds of questions, you can ask your question on the official [subreddit /r/i3wm](https://www.reddit.com/r/i3wm).
+For support & all other kinds of questions, you can ask your question on [GitHub Discussions](https://github.com/i3/i3/discussions).
 
 # Features
 

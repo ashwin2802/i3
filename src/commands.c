@@ -129,9 +129,7 @@ static Con *maybe_auto_back_and_forth_workspace(Con *workspace) {
  */
 typedef struct owindow {
     Con *con;
-
-    TAILQ_ENTRY(owindow)
-    owindows;
+    TAILQ_ENTRY(owindow) owindows;
 } owindow;
 
 typedef TAILQ_HEAD(owindows_head, owindow) owindows_head;
@@ -359,7 +357,7 @@ void cmd_move_con_to_workspace_name(I3_CMD, const char *name, const char *no_aut
 
     LOG("should move window to workspace %s\n", name);
     /* get the workspace */
-    Con *ws = workspace_get(name, NULL);
+    Con *ws = workspace_get(name);
 
     if (no_auto_back_and_forth == NULL) {
         ws = maybe_auto_back_and_forth_workspace(ws);
@@ -390,7 +388,7 @@ void cmd_move_con_to_workspace_number(I3_CMD, const char *which, const char *no_
 
     Con *ws = get_existing_workspace_by_num(parsed_num);
     if (!ws) {
-        ws = workspace_get(which, NULL);
+        ws = workspace_get(which);
     }
 
     if (no_auto_back_and_forth == NULL) {
@@ -1025,24 +1023,125 @@ void cmd_mode(I3_CMD, const char *mode) {
     ysuccess(true);
 }
 
-/*
- * Implementation of 'move [window|container] [to] output <str>'.
- *
- */
-void cmd_move_con_to_output(I3_CMD, const char *name) {
-    DLOG("Should move window to output \"%s\".\n", name);
-    HANDLE_EMPTY_MATCH;
+typedef struct user_output_name {
+    char *name;
+    TAILQ_ENTRY(user_output_name) user_output_names;
+} user_output_name;
+typedef TAILQ_HEAD(user_output_names_head, user_output_name) user_output_names_head;
 
-    owindow *current;
-    bool had_error = false;
-    TAILQ_FOREACH (current, &owindows, owindows) {
-        DLOG("matching: %p / %s\n", current->con, current->con->name);
-
-        had_error |= !con_move_to_output_name(current->con, name, true);
+static void user_output_names_add(user_output_names_head *list, const char *name) {
+    if (strcmp(name, "next") == 0) {
+        /* "next" here works like a wildcard: It "expands" to all available
+         * outputs. */
+        Output *output;
+        TAILQ_FOREACH (output, &outputs, outputs) {
+            user_output_name *co = scalloc(sizeof(user_output_name), 1);
+            co->name = sstrdup(output_primary_name(output));
+            TAILQ_INSERT_TAIL(list, co, user_output_names);
+        }
+        return;
     }
 
-    cmd_output->needs_tree_render = true;
-    ysuccess(!had_error);
+    user_output_name *co = scalloc(sizeof(user_output_name), 1);
+    co->name = sstrdup(name);
+    TAILQ_INSERT_TAIL(list, co, user_output_names);
+    return;
+}
+
+static Output *user_output_names_find_next(user_output_names_head *names, Output *current_output) {
+    Output *target_output = NULL;
+    user_output_name *uo;
+    TAILQ_FOREACH (uo, names, user_output_names) {
+        if (!target_output) {
+            /* The first available output from the list is used in 2 cases:
+             * 1. When we must wrap around the user list. For example, if user
+             * specifies outputs A B C and C is `current_output`.
+             * 2. When the current output is not in the user list. For example,
+             * user specifies A B C and D is `current_output`. */
+            target_output = get_output_from_string(current_output, uo->name);
+        }
+        if (strcasecmp(output_primary_name(current_output), uo->name) == 0) {
+            /* The current output is in the user list */
+            while (true) {
+                /* This corrupts the outer loop but it is ok since we are going
+                 * to break anyway. */
+                uo = TAILQ_NEXT(uo, user_output_names);
+                if (!uo) {
+                    /* We reached the end of the list. We should use the first
+                     * available output that, if it exists, is already saved in
+                     * target_output. */
+                    break;
+                }
+                Output *out = get_output_from_string(current_output, uo->name);
+                if (out) {
+                    return out;
+                }
+            }
+            break;
+        }
+    }
+    return target_output;
+}
+
+static void user_output_names_free(user_output_names_head *names) {
+    user_output_name *uo;
+    while (!TAILQ_EMPTY(names)) {
+        uo = TAILQ_FIRST(names);
+        free(uo->name);
+        TAILQ_REMOVE(names, uo, user_output_names);
+        free(uo);
+    }
+}
+
+/*
+ * Implementation of 'move [window|container|workspace] [to] output <strings>'.
+ *
+ */
+void cmd_move_con_to_output(I3_CMD, const char *name, bool move_workspace) {
+    /* Initialize a data structure that is used to save multiple user-specified
+     * output names since this function is called multiple types for each
+     * command call. */
+    static user_output_names_head names = TAILQ_HEAD_INITIALIZER(names);
+
+    if (name) {
+        user_output_names_add(&names, name);
+        return;
+    }
+
+    HANDLE_EMPTY_MATCH;
+
+    if (TAILQ_EMPTY(&names)) {
+        yerror("At least one output must be specified");
+        return;
+    }
+
+    bool success = false;
+    owindow *current;
+    TAILQ_FOREACH (current, &owindows, owindows) {
+        Con *ws = con_get_workspace(current->con);
+        if (con_is_internal(ws)) {
+            continue;
+        }
+
+        Output *current_output = get_output_for_con(ws);
+        Output *target_output = user_output_names_find_next(&names, current_output);
+        if (target_output) {
+            if (move_workspace) {
+                workspace_move_to_output(ws, target_output);
+            } else {
+                con_move_to_output(current->con, target_output, true);
+            }
+            success = true;
+        }
+    }
+    user_output_names_free(&names);
+
+    cmd_output->needs_tree_render = success;
+    if (success) {
+        ysuccess(true);
+    } else {
+        yerror("No output matched");
+    }
 }
 
 /*
@@ -1093,36 +1192,6 @@ void cmd_floating(I3_CMD, const char *floating_mode) {
 
     cmd_output->needs_tree_render = true;
     // XXX: default reply for now, make this a better reply
-    ysuccess(true);
-}
-
-/*
- * Implementation of 'move workspace to [output] <str>'.
- *
- */
-void cmd_move_workspace_to_output(I3_CMD, const char *name) {
-    DLOG("should move workspace to output %s\n", name);
-
-    HANDLE_EMPTY_MATCH;
-
-    owindow *current;
-    TAILQ_FOREACH (current, &owindows, owindows) {
-        Con *ws = con_get_workspace(current->con);
-        if (con_is_internal(ws)) {
-            continue;
-        }
-
-        Output *current_output = get_output_for_con(ws);
-        Output *target_output = get_output_from_string(current_output, name);
-        if (!target_output) {
-            yerror("Could not get output from string \"%s\"", name);
-            return;
-        }
-
-        workspace_move_to_output(ws, target_output);
-    }
-
-    cmd_output->needs_tree_render = true;
     ysuccess(true);
 }
 
@@ -1399,7 +1468,7 @@ void cmd_focus(I3_CMD) {
 
     CMD_FOCUS_WARN_CHILDREN;
 
-    Con *__i3_scratch = workspace_get("__i3_scratch", NULL);
+    Con *__i3_scratch = workspace_get("__i3_scratch");
     owindow *current;
     TAILQ_FOREACH (current, &owindows, owindows) {
         Con *ws = con_get_workspace(current->con);
@@ -1492,34 +1561,37 @@ void cmd_sticky(I3_CMD, const char *action) {
 }
 
 /*
- * Implementation of 'move <direction> [<pixels> [px]]'.
+ * Implementation of 'move <direction> [<amount> [px|ppt]]'.
  *
  */
-void cmd_move_direction(I3_CMD, const char *direction_str, long move_px) {
+void cmd_move_direction(I3_CMD, const char *direction_str, long amount, const char *mode) {
     owindow *current;
     HANDLE_EMPTY_MATCH;
 
     Con *initially_focused = focused;
     direction_t direction = parse_direction(direction_str);
 
+    const bool is_ppt = mode && strcmp(mode, "ppt") == 0;
+
+    DLOG("moving in direction %s, %ld %s\n", direction_str, amount, mode);
     TAILQ_FOREACH (current, &owindows, owindows) {
-        DLOG("moving in direction %s, px %ld\n", direction_str, move_px);
         if (con_is_floating(current->con)) {
-            DLOG("floating move with %ld pixels\n", move_px);
+            DLOG("floating move with %ld %s\n", amount, mode);
             Rect newrect = current->con->parent->rect;
+            Con *output = con_get_output(current->con);
 
             switch (direction) {
                 case D_LEFT:
-                    newrect.x -= move_px;
+                    newrect.x -= is_ppt ? output->rect.width * ((double)amount / 100.0) : amount;
                     break;
                 case D_RIGHT:
-                    newrect.x += move_px;
+                    newrect.x += is_ppt ? output->rect.width * ((double)amount / 100.0) : amount;
                     break;
                 case D_UP:
-                    newrect.y -= move_px;
+                    newrect.y -= is_ppt ? output->rect.height * ((double)amount / 100.0) : amount;
                     break;
                 case D_DOWN:
-                    newrect.y += move_px;
+                    newrect.y += is_ppt ? output->rect.height * ((double)amount / 100.0) : amount;
                     break;
             }
 
@@ -1660,6 +1732,9 @@ void cmd_restart(I3_CMD) {
     }
     ipc_shutdown(SHUTDOWN_REASON_RESTART, exempt_fd);
     unlink(config.ipc_socket_path);
+    if (current_log_stream_socket_path != NULL) {
+        unlink(current_log_stream_socket_path);
+    }
     /* We need to call this manually since atexit handlers don’t get called
      * when exec()ing */
     purge_zerobyte_logfile();
@@ -1693,6 +1768,17 @@ void cmd_open(I3_CMD) {
  *
  */
 void cmd_focus_output(I3_CMD, const char *name) {
+    static user_output_names_head names = TAILQ_HEAD_INITIALIZER(names);
+    if (name) {
+        user_output_names_add(&names, name);
+        return;
+    }
+
+    if (TAILQ_EMPTY(&names)) {
+        yerror("At least one output must be specified");
+        return;
+    }
+
     HANDLE_EMPTY_MATCH;
 
     if (TAILQ_EMPTY(&owindows)) {
@@ -1701,32 +1787,36 @@ void cmd_focus_output(I3_CMD, const char *name) {
     }
 
     Output *current_output = get_output_for_con(TAILQ_FIRST(&owindows)->con);
-    Output *output = get_output_from_string(current_output, name);
+    Output *target_output = user_output_names_find_next(&names, current_output);
+    user_output_names_free(&names);
+    bool success = false;
+    if (target_output) {
+        success = true;
 
-    if (!output) {
-        yerror("Output %s not found.", name);
-        return;
+        /* get visible workspace on output */
+        Con *ws = NULL;
+        GREP_FIRST(ws, output_get_content(target_output->con), workspace_is_visible(child));
+        if (!ws) {
+            yerror("BUG: No workspace found on output.");
+            return;
+        }
+
+        workspace_show(ws);
     }
 
-    /* get visible workspace on output */
-    Con *ws = NULL;
-    GREP_FIRST(ws, output_get_content(output->con), workspace_is_visible(child));
-    if (!ws) {
-        yerror("BUG: No workspace found on output.");
-        return;
+    cmd_output->needs_tree_render = success;
+    if (success) {
+        ysuccess(true);
+    } else {
+        yerror("No output matched");
     }
-
-    workspace_show(ws);
-
-    cmd_output->needs_tree_render = true;
-    ysuccess(true);
 }
 
 /*
- * Implementation of 'move [window|container] [to] [absolute] position <px> [px] <px> [px]
+ * Implementation of 'move [window|container] [to] [absolute] position [<pos_x> [px|ppt] <pos_y> [px|ppt]]
  *
  */
-void cmd_move_window_to_position(I3_CMD, long x, long y) {
+void cmd_move_window_to_position(I3_CMD, long x, const char *mode_x, long y, const char *mode_y) {
     bool has_error = false;
 
     owindow *current;
@@ -1745,10 +1835,11 @@ void cmd_move_window_to_position(I3_CMD, long x, long y) {
         }
 
         Rect newrect = current->con->parent->rect;
+        Con *output = con_get_output(current->con);
 
-        DLOG("moving to position %ld %ld\n", x, y);
-        newrect.x = x;
-        newrect.y = y;
+        newrect.x = mode_x && strcmp(mode_x, "ppt") == 0 ? output->rect.width * ((double)x / 100.0) : x;
+        newrect.y = mode_y && strcmp(mode_y, "ppt") == 0 ? output->rect.height * ((double)y / 100.0) : y;
+        DLOG("moving to position %d %s %d %s\n", newrect.x, mode_x, newrect.y, mode_y);
 
         if (!floating_reposition(current->con->parent, newrect)) {
             yerror("Cannot move window/container out of bounds.");
@@ -1973,6 +2064,35 @@ void cmd_title_format(I3_CMD, const char *format) {
 }
 
 /*
+ * Implementation of 'title_window_icon <yes|no>' and 'title_window_icon padding <px>'
+ *
+ */
+void cmd_title_window_icon(I3_CMD, const char *enable, int padding) {
+    if (enable != NULL && !boolstr(enable)) {
+        padding = -1;
+    }
+    DLOG("setting window_icon=%d\n", padding);
+    HANDLE_EMPTY_MATCH;
+
+    owindow *current;
+    TAILQ_FOREACH (current, &owindows, owindows) {
+        DLOG("setting window_icon for %p / %s\n", current->con, current->con->name);
+        current->con->window_icon_padding = padding;
+
+        if (current->con->window != NULL) {
+            /* Make sure the window title is redrawn immediately. */
+            current->con->window->name_x_changed = true;
+        } else {
+            /* For windowless containers we also need to force the redrawing. */
+            FREE(current->con->deco_render_params);
+        }
+    }
+
+    cmd_output->needs_tree_render = true;
+    ysuccess(true);
+}
+
+/*
  * Implementation of 'rename workspace [<name>] to <name>'
  *
  */
@@ -2026,26 +2146,9 @@ void cmd_rename_workspace(I3_CMD, const char *old_name, const char *new_name) {
     con_attach(workspace, parent, false);
     ipc_send_workspace_event("rename", workspace, NULL);
 
-    /* Move the workspace to the correct output if it has an assignment */
-    struct Workspace_Assignment *assignment = NULL;
-    TAILQ_FOREACH (assignment, &ws_assignments, ws_assignments) {
-        if (assignment->output == NULL)
-            continue;
-        if (strcmp(assignment->name, workspace->name) != 0 && (!name_is_digits(assignment->name) || ws_name_to_number(assignment->name) != workspace->num)) {
-            continue;
-        }
-
-        Output *target_output = get_output_by_name(assignment->output, true);
-        if (!target_output) {
-            LOG("Could not get output named \"%s\"\n", assignment->output);
-            continue;
-        }
-        if (!output_triggers_assignment(target_output, assignment)) {
-            continue;
-        }
-        workspace_move_to_output(workspace, target_output);
-
-        break;
+    Con *assigned = get_assigned_output(workspace->name, workspace->num);
+    if (assigned) {
+        workspace_move_to_output(workspace, get_output_for_con(assigned));
     }
 
     bool can_restore_focus = previously_focused != NULL;

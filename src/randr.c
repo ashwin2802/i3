@@ -438,32 +438,30 @@ void init_ws_for_output(Output *output) {
     Con *content = output_get_content(output->con);
     Con *previous_focus = con_get_workspace(focused);
 
-    /* go through all assignments and move the existing workspaces to this output */
-    struct Workspace_Assignment *assignment;
-    TAILQ_FOREACH (assignment, &ws_assignments, ws_assignments) {
-        if (!output_triggers_assignment(output, assignment)) {
+    /* Iterate over all workspaces and check if any of them should be assigned
+     * to this output.
+     * Note: in order to do that we iterate over all_cons and not using another
+     * list that would be updated during iteration by the
+     * workspace_move_to_output function. */
+    Con *workspace;
+    TAILQ_FOREACH (workspace, &all_cons, all_cons) {
+        if (workspace->type != CT_WORKSPACE || con_is_internal(workspace)) {
             continue;
         }
-        Con *workspace = get_existing_workspace_by_name(assignment->name);
-        if (workspace == NULL)
-            continue;
 
-        /* check that this workspace is not already attached (that means the
-         * user configured this assignment twice) */
-        Con *workspace_out = con_get_output(workspace);
-        if (workspace_out == output->con) {
-            LOG("Workspace \"%s\" assigned to output \"%s\", but it is already "
-                "there. Do you have two assignment directives for the same "
-                "workspace in your configuration file?\n",
-                workspace->name, output_primary_name(output));
+        Con *workspace_out = get_assigned_output(workspace->name, workspace->num);
+
+        if (output->con != workspace_out) {
             continue;
         }
 
         DLOG("Moving workspace \"%s\" from output \"%s\" to \"%s\" due to assignment\n",
-             workspace->name, workspace_out->name, output_primary_name(output));
+             workspace->name, output_primary_name(get_output_for_con(workspace)),
+             output_primary_name(output));
+
         /* Need to copy output's rect since content is not yet rendered. We
-         * can't call render_con here because render_output only proceeds if a
-         * workspace exists. */
+         * can't call render_con here because render_output only proceeds
+         * if a workspace exists. */
         content->rect = output->con->rect;
         workspace_move_to_output(workspace, output);
     }
@@ -485,6 +483,7 @@ void init_ws_for_output(Output *output) {
     }
 
     /* otherwise, we create the first assigned ws for this output */
+    struct Workspace_Assignment *assignment;
     TAILQ_FOREACH (assignment, &ws_assignments, ws_assignments) {
         if (!output_triggers_assignment(output, assignment)) {
             continue;

@@ -27,7 +27,7 @@
 #include <yajl/yajl_parse.h>
 
 /* Global variables for child_*() */
-i3bar_child child;
+i3bar_child child = {0};
 #define DLOG_CHILD DLOG("%s: pid=%ld stopped=%d stop_signal=%d cont_signal=%d click_events=%d click_events_init=%d\n", \
                         __func__, (long)child.pid, child.stopped, child.stop_signal, child.cont_signal, child.click_events, child.click_events_init)
 
@@ -66,7 +66,7 @@ int child_stdin;
  * Remove all blocks from the given statusline.
  * If free_resources is set, the fields of each status block will be free'd.
  */
-static void clear_statusline(struct statusline_head *head, bool free_resources) {
+void clear_statusline(struct statusline_head *head, bool free_resources) {
     struct status_block *first;
     while (!TAILQ_EMPTY(head)) {
         first = TAILQ_FIRST(head);
@@ -139,6 +139,10 @@ static void cleanup(void) {
     if (stdin_io != NULL) {
         ev_io_stop(main_loop, stdin_io);
         FREE(stdin_io);
+        close(stdin_fd);
+        stdin_fd = 0;
+        close(child_stdin);
+        child_stdin = 0;
     }
 
     if (child_sig != NULL) {
@@ -634,7 +638,7 @@ static void child_click_events_initialize(void) {
  * Generates a click event, if enabled.
  *
  */
-void send_block_clicked(int button, const char *name, const char *instance, int x, int y, int x_rel, int y_rel, int width, int height, int mods) {
+void send_block_clicked(int button, const char *name, const char *instance, int x, int y, int x_rel, int y_rel, int out_x, int out_y, int width, int height, int mods) {
     if (!child.click_events) {
         return;
     }
@@ -685,6 +689,12 @@ void send_block_clicked(int button, const char *name, const char *instance, int 
 
     ystr("relative_y");
     yajl_gen_integer(gen, y_rel);
+
+    ystr("output_x");
+    yajl_gen_integer(gen, out_x);
+
+    ystr("output_y");
+    yajl_gen_integer(gen, out_y);
 
     ystr("width");
     yajl_gen_integer(gen, width);

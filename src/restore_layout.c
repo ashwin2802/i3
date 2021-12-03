@@ -29,8 +29,7 @@ typedef struct placeholder_state {
     /** The drawable surface */
     surface_t surface;
 
-    TAILQ_ENTRY(placeholder_state)
-    state;
+    TAILQ_ENTRY(placeholder_state) state;
 } placeholder_state;
 
 static TAILQ_HEAD(state_head, placeholder_state) state_head =
@@ -135,7 +134,6 @@ static void update_placeholder_contents(placeholder_state *state) {
     draw_util_clear_surface(&(state->surface), background);
 
     // TODO: make i3font functions per-connection, at least these two for now…?
-    xcb_flush(restore_conn);
     xcb_aux_sync(restore_conn);
 
     Match *swallows;
@@ -154,6 +152,7 @@ static void update_placeholder_contents(placeholder_state *state) {
         APPEND_REGEX(instance);
         APPEND_REGEX(window_role);
         APPEND_REGEX(title);
+        APPEND_REGEX(machine);
 
         if (serialized == NULL) {
             DLOG("This swallows specification is not serializable?!\n");
@@ -180,7 +179,6 @@ static void update_placeholder_contents(placeholder_state *state) {
     int y = (state->rect.height / 2) - (config.font.height / 2);
     draw_util_text(line, &(state->surface), foreground, background, x, y, text_width);
     i3string_free(line);
-    xcb_flush(restore_conn);
     xcb_aux_sync(restore_conn);
 }
 
